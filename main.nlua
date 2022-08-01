@@ -1,0 +1,94 @@
+local json = import("./json.nlua")
+local fetch = import("./fetch.nlua")
+
+local function exists(path: string)
+	local f = io.open(path, "r")
+
+	if not f then return false end
+
+	f:close()
+	return true
+end
+
+local function read(path: string)
+	local f = assert(io.open(path, "rb"))
+	local code = f:read("*all")
+	f:close()
+	return code
+end
+
+local analyzer function json2interface(data: literal string): Table
+	local blob = data:GetData()
+	local tbl = require("nattlua.other.json").decode(blob)
+
+	local function convert(val)
+		local T = type(val)
+
+		if T == "table" then
+			local tbl = types.Table()
+
+			for k, v in pairs(val) do
+				tbl:Set(convert(k), convert(v))
+			end
+
+			return tbl
+		elseif T == "string" then
+			return types.LString(val)
+		elseif T == "number" then
+			return types.LNumber(val)
+		elseif T == "boolean" then
+			return val == true and types.True() or types.False()
+		else
+			error("NYI " .. T)
+		end
+	end
+
+	return convert(tbl)
+end
+
+local analyzer function readfile(path: literal string): string
+	local file = io.open(path:GetData(), "rb")
+	local blob = file:read("*a")
+	file:close()
+	return blob
+end
+
+if not exists("./pages/index.json") then
+	fetch("https://wiki.facepunch.com/gmod/~pagelist?format=json", "./pages/index.json")
+end
+
+local blob = read("./pages/index.json")
+local pages = json.decode(blob) as {[number] = {address = string}}
+assert(pages[1].address == "")
+table.remove(pages, 1) -- remove the first page which is just the homepage
+for _, page in ipairs(pages) do
+	local url = "https://wiki.facepunch.com/gmod/" .. page.address .. "?format=json"
+	local path = "./pages/" .. page.address .. ".json"
+
+	if not exists(path) then fetch(url, path) end
+
+	local blob = read(path)
+	local page = json.decode(blob) as {
+		title = string,
+		wikiName = string,
+		wikiIcon = string,
+		wikiUrl = string,
+		address = string,
+		createdTime = string,
+		updateCount = number,
+		markup = string,
+		html = string,
+		footer = string,
+		revisionId = number,
+		pageLinks = List<|
+			{
+				url = string,
+				label = string,
+				icon = string,
+				description = string,
+			}
+		|>,
+	}
+
+	if page.title == "weapons.Get" then print(page.html) end
+end

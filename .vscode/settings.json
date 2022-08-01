@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.nlua": "nattlua",
+        "*.lua": "nattlua",
+    }
+}
