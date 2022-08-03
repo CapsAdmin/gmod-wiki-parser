@@ -1,0 +1,258 @@
+local type Whitespace = {
+	@Name = "Whitespace",
+	type = "whitespace",
+	data = string,
+}
+local type Tag = {
+	@Name = "Tag",
+	type = "tag",
+	tag = string,
+	attributes = Map<|string, string|>,
+}
+local type Root = {
+	type = "root",
+}
+local type Node = Whitespace | Tag
+type Tag.children = nil | List<|Node|>
+type Root.children = List<|Node|>
+local lib = {}
+type lib.Tag = Tag
+type lib.Whitespace = Whitespace
+type lib.Node = Node
+
+do
+	local function parse_tag(str: string)
+		local tag, rest = str:match("%<(%S+)%s*(.*)%>")
+		local attributes
+
+		if rest and rest ~= "" then
+			attributes = {}
+
+			for key, val in rest:gmatch("(%S+)%s*=%s*(%b\"\")") do
+				attributes[key] = val:sub(2, -2)
+			end
+		end
+
+		return tag, attributes
+	end
+
+	function lib.parse(html: string): Tag
+		local root: Tag = {
+			type = "tag",
+			tag = "root",
+			children = {},
+			attributes = {},
+		}
+		local node = root
+		local parents: {[Node] = Node} = {[root] = root}
+
+		local function parse_chunk(chunk: string)
+			local closing = chunk:sub(1, 2) == "</"
+			local self_closing = chunk:sub(-2) == "/>"
+			local opening = chunk:sub(1, 1) == "<" and not self_closing and not closing
+			local whitespace = not closing and not self_closing and not opening
+			local child: Node
+
+			if closing and node.tag and node.tag ~= chunk:sub(3, -2) then
+				local found = false
+				local temp = node
+
+				while true do
+					if not temp or temp == root then break end
+
+					if temp.tag and temp.tag == chunk:sub(3, -2) then
+						found = true
+
+						break
+					end
+
+					temp = parents[temp]
+				end
+
+				if found then
+					parse_chunk("</" .. node.tag .. ">")
+				else
+					parse_chunk("<" .. chunk:sub(3, -2) .. ">")
+				end
+			end
+
+			if whitespace or opening or self_closing then
+				child = {} as Node
+
+				if whitespace then
+					child.type = "whitespace"
+				else
+					child.type = "tag"
+				end
+
+				if not self_closing then parents[child] = node end
+			end
+
+			if whitespace then
+				child.data = chunk:gsub("%s+", " ")
+			elseif opening or self_closing then
+				local tag, attributes = parse_tag(chunk)
+				child.attributes = attributes
+				child.tag = tag
+
+				if opening then child.children = {} end
+			end
+
+			if whitespace or opening or self_closing then
+				table.insert(node.children, child  as any)
+			end
+
+			if opening then node = child elseif closing then node = parents[node  as any] end
+		end
+
+		local pos = 0
+
+		while true do
+			local start, stop = html:find("%b<>", pos)
+
+			if not start or not stop then break end
+
+			local whitespace = html:sub(pos + 1, start - 1)
+
+			if whitespace ~= "" and not whitespace:find("^%s+$") then
+				parse_chunk(whitespace)
+			end
+
+			parse_chunk(html:sub(start, stop))
+			pos = stop
+		end
+
+		local whitespace = html:sub(pos + 1, #html - 1)
+
+		if whitespace ~= "" and not whitespace:find("^%s+$") then
+			parse_chunk(whitespace)
+		end
+
+		return root  as Node
+	end
+end
+
+function lib.to_html(node: Node, indent: nil | number): string
+	indent = indent or 0
+	local s = ("    "):rep(indent)
+
+	if node.tag then
+		s = s .. "<"
+		s = s .. node.tag
+
+		if node.attributes then
+			for k, v in pairs(node.attributes) do
+				s = s .. " " .. k .. "=\"" .. v .. "\""
+			end
+		end
+
+		s = s .. ">"
+	end
+
+	if node.children then
+		s = s .. "\n"
+
+		for _, child in ipairs(node.children) do
+			indent = indent + 1
+			s = s .. lib.to_html(child, indent)
+			indent = indent - 1
+		end
+
+		s = s .. "\n"
+	end
+
+	if node.data then
+		s = s .. node.data:gsub("%s+", " ") .. "\n"
+		s = s .. ("    "):rep(indent)
+	end
+
+	if node.tag then
+		if node.children then s = s .. ("    "):rep(indent) end
+
+		s = s .. "</" .. node.tag .. ">"
+
+		if node.children then s = s .. "\n" end
+	end
+
+	return s
+end
+
+function lib.selector(node: any)
+	local meta = {}
+
+	function meta:__index(key: string)
+		if meta[key] then return meta[key] end
+
+		if rawget(self, "__obj") == nil then return lib.selector(nil) end
+
+		local index = tonumber(key)
+
+		if index then
+			if self.__obj.children and self.__obj.children[index] ~= nil then
+				return lib.selector(self.__obj.children[index])
+			end
+		else
+			if self.__obj.attributes and self.__obj.attributes[key] ~= nil then
+				return lib.selector(self.__obj.attributes[key])
+			end
+
+			if self.__obj[key] ~= nil then return lib.selector(self.__obj[key]) end
+		end
+
+		return lib.selector(nil)
+	end
+
+	function meta:get()
+		return self.__obj
+	end
+
+	function meta:find(pattern: string, plain: boolean)
+		if type(self.__obj) == "string" then
+			return self.__obj:find(pattern, plain) ~= nil
+		end
+
+		return false
+	end
+
+	return setmetatable({__obj = node}, meta)
+end
+
+function lib.find_node(node: Node, key: string, value: string): Tag | nil
+	local attributes = node.attributes and node.attributes[key]
+
+	if attributes and attributes:find(value) then return node end
+
+	if node.children then
+		for _, child in ipairs(node.children) do
+			local result = lib.find_node(child, key, value)
+
+			if result then return result end
+		end
+	end
+
+	return nil
+end
+
+function lib.find_tag(node: Node, tag: string): Tag | nil
+	if node and node.tag and node.tag:find(tag) then return node end
+
+	if node.children then
+		for _, child in ipairs(node.children) do
+			local result = lib.find_tag(child, tag)
+
+			if result then return result end
+		end
+	end
+
+	return nil
+end
+
+function lib.select_first_data(node: nil | Node): string | nil
+	local data = node and node.children and node.children[1]
+
+	if node and node.data then return node.data  as string end
+
+	return nil
+end
+
+return lib

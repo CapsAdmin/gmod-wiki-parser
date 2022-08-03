@@ -24,8 +24,21 @@ elseif cmd == "build" then
 	})
 	local func = assert(loadstring(code, "main.nlua"))
 
+	if func then func() --compiler:Analyze() -- analyze after
+	end
+elseif cmd == "run" then
+	local path = select(2, ...)
+	local compiler = assert(nl.Compiler([[
+			return import("./]] .. path .. [[")
+		]], path, analyzer_config))
+	local code = compiler:Emit({
+		blank_invalid_code = true,
+		module_encapsulation_method = "loadstring",
+	})
+	local func = assert(loadstring(code, path))
+
 	if func then
+		compiler:Analyze()
 		func()
-		compiler:Analyze() -- analyze after
 	end
 end

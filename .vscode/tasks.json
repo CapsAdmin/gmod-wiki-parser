@@ -1,0 +1,11 @@
+// -jp=Fpa -
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "onsave",
+            "type": "shell",
+            "command": "cd ${workspaceFolder} && /home/caps/.local/bin/nattlua run ${file}"
+        }
+    ]
+}

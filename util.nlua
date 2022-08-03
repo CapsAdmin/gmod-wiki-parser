@@ -1,0 +1,86 @@
+local util = {}
+
+function util.file_exists(path: string)
+	local f = io.open(path, "r")
+
+	if not f then return false end
+
+	f:close()
+	return true
+end
+
+function util.file_read(path: string): string
+	local f = assert(io.open(path, "rb"))
+	local code = f:read("*all")
+	assert(code, "file is empty")
+	f:close()
+	return code
+end
+
+function util.file_write(path: string, content: string)
+	local output = assert(io.open("./output.json", "w"))
+	output:write(content)
+	output:close()
+end
+
+analyzer function util.json2interface(data: literal string): Table
+	local blob = data:GetData()
+	local tbl = require("nattlua.other.json").decode(blob)
+
+	local function convert(val)
+		local T = type(val)
+
+		if T == "table" then
+			local tbl = types.Table()
+
+			for k, v in pairs(val) do
+				tbl:Set(convert(k), convert(v))
+			end
+
+			return tbl
+		elseif T == "string" then
+			return types.LString(val)
+		elseif T == "number" then
+			return types.LNumber(val)
+		elseif T == "boolean" then
+			return val == true and types.True() or types.False()
+		else
+			error("NYI " .. T)
+		end
+	end
+
+	return convert(tbl)
+end
+
+analyzer function util.read_file(path: literal string): string
+	local file = io.open(path:GetData(), "rb")
+	local blob = file:read("*a")
+	file:close()
+	return blob
+end
+
+function util.string_split(self: string, separator: string)
+	local tbl = {}
+	local current_pos = 1
+
+	for i = 1, #self do
+		local start_pos, end_pos = self:find(separator, current_pos, true)
+
+		if not start_pos or not end_pos then break end
+
+		tbl[i] = self:sub(current_pos, start_pos - 1)
+		current_pos = end_pos + 1
+	end
+
+	if current_pos > 1 then
+		tbl[#tbl + 1] = self:sub(current_pos)
+	else
+		tbl[1] = self
+	end
+
+	return tbl
+end
+
+util.download = import("./fetch.nlua")
+
+return util

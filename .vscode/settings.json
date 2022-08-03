@@ -2,5 +2,22 @@
     "files.associations": {
         "*.nlua": "nattlua",
         "*.lua": "nattlua",
+    },
+    "triggerTaskOnSave.tasks": {
+        "onsave": [
+            "**/*.nlua",
+        ]
+    },
+    "workbench.colorCustomizations": {
+        "editor.background": "#1F1F1F"
+    },
+    "editor.tokenColorCustomizations": {
+        "strings": "#e99648",
+        "numbers": "#fffa9b",
+        "keywords": "#969ebb",
+        "types": "#b3ffd5",
+        "functions": "#83e6ff",
+        "comments": "#ff9797",
+        "variables": "#ffffff"
     }
 }
