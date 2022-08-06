@@ -19,6 +19,7 @@ local lib = {}
 type lib.Tag = Tag
 type lib.Whitespace = Whitespace
 type lib.Node = Node
+local util = import("./util.nlua")
 
 do
 	local function parse_tag(str: string)
@@ -177,26 +178,82 @@ function lib.to_html(node: Node, indent: nil | number): string
 	return s
 end
 
-function lib.selector(node: any)
+function lib.to_compact_html(node: Node, indent: nil | number): string
+	indent = indent or 0
+	local s = ""
+
+	if node.tag and indent ~= 0 then
+		s = s .. "<"
+		s = s .. node.tag
+
+		if node.attributes then
+			for k, v in pairs(node.attributes) do
+				if k ~= "class" then s = s .. " " .. k .. "=\"" .. v .. "\"" end
+			end
+		end
+
+		s = s .. ">"
+	end
+
+	if node.children then
+		for _, child in ipairs(node.children) do
+			indent = indent + 1
+			s = s .. lib.to_compact_html(child, indent)
+			indent = indent - 1
+		end
+	end
+
+	if node.data then
+		local data = util.string_trim((node.data:gsub("%s+", " ")))
+		s = s .. data
+	end
+
+	if node.tag and indent ~= 0 then s = s .. "</" .. node.tag .. ">" end
+
+	return s
+end
+
+function lib.to_string(node: Node)
+	local s = ""
+
+	if node.data then
+		local data = util.string_trim((node.data:gsub("%s+", " ")))
+		s = s .. data .. " "
+	end
+
+	if node.children then
+		for _, child in ipairs(node.children) do
+			s = s .. lib.to_string(child)
+		end
+	end
+
+	return s
+end
+
+function lib.selector(node: ref any)
 	local meta = {}
 
-	function meta:__index(key: string)
+	function meta:__index(key: ref (string | number))
 		if meta[key] then return meta[key] end
 
-		if rawget(self, "__obj") == nil then return lib.selector(nil) end
+		local val = rawget(self, "__obj")
 
-		local index = tonumber(key)
+		if val == nil then return lib.selector(nil) end
 
-		if index then
-			if self.__obj.children and self.__obj.children[index] ~= nil then
-				return lib.selector(self.__obj.children[index])
+		if type(key) == "number" then
+			if val.children and val.children[key] ~= nil then
+				return lib.selector(val.children[key])
 			end
 		else
-			if self.__obj.attributes and self.__obj.attributes[key] ~= nil then
-				return lib.selector(self.__obj.attributes[key])
+			if type(val) == "table" then
+				if val.attributes and val.attributes[key] ~= nil then
+					return lib.selector(val.attributes[key])
+				end
 			end
 
-			if self.__obj[key] ~= nil then return lib.selector(self.__obj[key]) end
+			if key == "type" then return val.type end
+
+			if key == "tag" then return val.tag end
 		end
 
 		return lib.selector(nil)
@@ -248,7 +305,7 @@ function lib.find_tag(node: Node, tag: string): Tag | nil
 end
 
 function lib.select_first_data(node: nil | Node): string | nil
-	local data = node and node.children and node.children[1]
+	local node = node and node.children and node.children[1]
 
 	if node and node.data then return node.data  as string end
 
