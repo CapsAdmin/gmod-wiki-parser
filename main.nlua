@@ -29,7 +29,11 @@ if not util.file_exists("./pages/index.json") then
 end
 
 local function build_from_pages()
-	local T = {libraries = {}, structures = {}, enums = {}}
+	local T = {
+		libraries = {},
+		structures = {PixelVisHandle = {functions = {}, members = {}}},
+		enums = {},
+	}
 	local pages = json.decode(util.file_read("./pages/index.json")) as PageIndex
 
 	do
@@ -90,12 +94,12 @@ local function build_from_pages()
 		local node = html.find_node(root, "class", "")
 
 		if node then
-			local class = assert(node.attributes.class, "node has no class attribute")
+			local class = assert(node.attributes and node.attributes.class, "node has no class attribute")
 
 			if class:sub(1, #"type") == "type" then
 				local section = html.find_node(node, "class", "section")
 
-				if section then
+				if section and section.children then
 					local members
 					local functions
 
@@ -111,13 +115,14 @@ local function build_from_pages()
 						end
 					end
 
-					if members then
+					if members and members.children then
 						T.structures[page.address] = T.structures[page.address] or {members = {}, functions = {}}
 
 						for _, child in ipairs(members.children) do
-							local type = html.to_string(child.children[1])
-							local name = html.to_string(child.children[2])
-							local description = child.children[3]
+							local children = assert(child.children)
+							local type = html.to_string(assert(children[1]))
+							local name = html.to_string(assert(children[2]))
+							local description = assert(children[3])
 							type = find_type_from_description(type, description, page.address)
 
 							if name:find(" or ", nil, true) then
@@ -221,7 +226,6 @@ local function build_from_pages()
 
 				T.structures[name] = S
 			elseif class:sub(1, #"function") == "function" then
-				local class = assert(node.attributes.class)
 				local classes = util.string_split(class, " ")
 				table.remove(classes, 1) -- remove function
 				local function_type = table.remove(classes, 1) -- remove function
@@ -269,6 +273,9 @@ local function build_from_pages()
 							local type = html.select_first_data(html.find_node(child, "class", "link%-page"))
 							local description = html.find_node(child, "class", "numbertagindent")
 							type = find_type_from_description(type, description, page.address)
+
+							if type == "vararg" then type = "...any" end
+
 							F.output[i] = {
 								name = name,
 								type = type,
@@ -312,7 +319,7 @@ local buffer = require("string.buffer" as string)
 local T
 
 if util.file_exists("./cache.dat") then
-	T = buffer.decode(util.file_read("./cache.dat")) as return_type<|build_from_pages|>[0]
+	T = buffer.decode(util.file_read("./cache.dat")) as return_type<|build_from_pages|>[1]
 else
 	T = build_from_pages()
 	local buf = buffer.encode(T)
@@ -321,11 +328,11 @@ end
 
 util.file_write("./output.json", json.encode(T))
 
-local function sort(a, b)
+local function sort(a: ref Table, b: ref Table)
 	return a.key > b.key
 end
 
-local function to_list(map)
+local function to_list(map: ref Table)
 	local list = {}
 
 	for k, v in pairs(map) do
@@ -336,7 +343,7 @@ local function to_list(map)
 	return list
 end
 
-local function spairs(map)
+local function spairs(map: ref Table)
 	local list = to_list(map)
 	local i = 0
 	return function()
@@ -376,6 +383,14 @@ local function translate_type(t: string)
 		return "Function"
 	elseif t == "table" then
 		return "Table"
+	elseif t == "pixelvis handle t" then
+		return "PixelVisHandle"
+	elseif t == "file_class" then
+		return "File"
+	elseif t == "Boolean" then
+		return "boolean"
+	elseif t == "DListBox" or t == "MatSelect" then
+		return "Panel"
 	end
 
 	return t
@@ -401,6 +416,8 @@ for group_name, data in spairs(T.structures) do
 	write("do -- " .. group_name .. "\n")
 
 	for name, data in spairs(data.members) do
+		if name == "StructureField (Order)" then name = "StructureField" end
+
 		if tonumber(name) then
 			name = "[" .. name .. "]"
 		else
@@ -413,12 +430,30 @@ for group_name, data in spairs(T.structures) do
 	for name, data in spairs(data.functions) do
 		local input = data.input
 		table.insert(input, 1, {type = group_name})
+
+		if name == "SetKeyboardInputEnabled(lowercase)" then
+			name = "SetKeyboardInputEnabled"
+		end
+
 		write(
 			"\ttype " .. group_name .. "." .. name .. " = function=(" .. write_tuple(input) .. ")>(" .. write_tuple(data.output) .. ")\n"
 		)
 	end
 
 	write("end\n")
+end
+
+for group_name, data in spairs(T.libraries) do
+	write("type " .. group_name .. " = {\n")
+
+	for name, data in spairs(data.functions) do
+		name = name:gsub("%.", "_") -- TODO
+		write(
+			"\t" .. name .. " = function=(" .. write_tuple(data.input) .. ")>(" .. write_tuple(data.output) .. "),\n"
+		)
+	end
+
+	write("}\n")
 end
 
 util.file_write("./output.nlua", table.concat(nlua))

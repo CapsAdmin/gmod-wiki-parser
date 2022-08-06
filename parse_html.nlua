@@ -217,7 +217,8 @@ function lib.to_string(node: Node)
 	local s = ""
 
 	if node.data then
-		local data = util.string_trim((node.data:gsub("%s+", " ")))
+		local str = node.data:gsub("%s+", " ")
+		local data = util.string_trim(str)
 		s = s .. data .. " "
 	end
 
