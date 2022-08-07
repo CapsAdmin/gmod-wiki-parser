@@ -1,95 +1,57 @@
-local json = import("./json.nlua")
-local html = import("./parse_html.nlua")
-local util = import("./util.nlua")
-local type PageIndex = {[number] = {address = string}}
-local type Page = {
-	title = string,
-	wikiName = string,
-	wikiIcon = string,
-	wikiUrl = string,
-	address = string,
-	createdTime = string,
-	updateCount = number,
-	markup = string,
-	html = string,
-	footer = string,
-	revisionId = number,
-	pageLinks = List<|
-		{
-			url = string,
-			label = string,
-			icon = string,
-			description = string,
-		}
-	|>,
-}
+local html = import("./util/parse_html.nlua")
+local util = import("./util/util.nlua")
+local download_wilki_pages = import("./download_wiki_pages.nlua")
 
-if not util.file_exists("./pages/index.json") then
-	util.download("https://wiki.facepunch.com/gmod/~pagelist?format=json", "./pages/index.json")
+local function clean_default(str: nil | string)
+	if not str then return end
+
+	str = str:gsub("&%w+;", "")
+	str = util.string_trim((str:gsub("=", "")))
+	return str
 end
 
-local function build_from_pages()
+local function find_type_from_description(type: string | nil, description: html.Tag | nil, page_link: string)
+	if not type or type == "number" or type == "Panel" or type == "table" then
+		local anchor = html.find_tag(description, "a")
+		local href = anchor and anchor.attributes and anchor.attributes.href
+
+		if href then
+			if href:find("/gmod/D.-:") then return type end
+
+			if href == "/gmod/Color" then
+				return "Color"
+			elseif href == "/gmod/Vector" then
+				return "Vector"
+			elseif href == "/gmod/Angle" then
+				return "Angle"
+			elseif href == "/gmod/VMatrix" then
+				return "VMatrix"
+			elseif href == "/gmod/string" then
+				return "string"
+			elseif href:find("/gmod/Enums/", nil, true) then
+				return "Enum." .. href:sub(#"/gmod/Enums/" + 1)
+			elseif href:find("/gmod/Structures", nil, true) then
+				return href:sub(#"/gmod/Structures/" + 1)
+			elseif href:find("/gmod/D", nil, true) then
+				return href:sub(#"/gmod/" + 1)
+			elseif href:find("/gmod/") then
+
+			--print("not sure how to resolve generic ", type, " to ", href, " in page ", page_link)
+			end
+		end
+	end
+
+	return type
+end
+
+return function(pages: return_type<|download_wilki_pages|>[1])
 	local T = {
 		libraries = {},
 		structures = {PixelVisHandle = {functions = {}, members = {}}},
 		enums = {},
 	}
-	local pages = json.decode(util.file_read("./pages/index.json")) as PageIndex
-
-	do
-		assert(pages[1].address == "")
-		table.remove(pages, 1) -- remove the first page which is just the homepage
-	end
-
-	local function clean_default(str: nil | string)
-		if not str then return end
-
-		str = str:gsub("&%w+;", "")
-		str = util.string_trim((str:gsub("=", "")))
-		return str
-	end
-
-	local function find_type_from_description(type: string | nil, description: html.Tag | nil, page_link: string)
-		if not type or type == "number" or type == "Panel" or type == "table" then
-			local anchor = html.find_tag(description, "a")
-			local href = anchor and anchor.attributes and anchor.attributes.href
-
-			if href then
-				if href:find("/gmod/D.-:") then return type end
-
-				if href == "/gmod/Color" then
-					return "Color"
-				elseif href == "/gmod/Vector" then
-					return "Vector"
-				elseif href == "/gmod/Angle" then
-					return "Angle"
-				elseif href == "/gmod/VMatrix" then
-					return "VMatrix"
-				elseif href == "/gmod/string" then
-					return "string"
-				elseif href:find("/gmod/Enums/", nil, true) then
-					return "Enum." .. href:sub(#"/gmod/Enums/" + 1)
-				elseif href:find("/gmod/Structures", nil, true) then
-					return href:sub(#"/gmod/Structures/" + 1)
-				elseif href:find("/gmod/D", nil, true) then
-					return href:sub(#"/gmod/" + 1)
-				elseif href:find("/gmod/") then
-
-				--print("not sure how to resolve generic ", type, " to ", href, " in page ", page_link)
-				end
-			end
-		end
-
-		return type
-	end
 
 	for _, page in ipairs(pages) do
-		local url = "https://wiki.facepunch.com/gmod/" .. page.address .. "?format=json"
-		local path = "./pages/" .. page.address .. ".json"
-
-		if not util.file_exists(path) then util.download(url, path) end
-
-		local page = json.decode(util.file_read(path)) as Page
 		local root = html.parse(page.html)
 		local node = html.find_node(root, "class", "")
 
@@ -314,146 +276,3 @@ local function build_from_pages()
 
 	return T
 end
-
-local buffer = require("string.buffer" as string)
-local T
-
-if util.file_exists("./cache.dat") then
-	T = buffer.decode(util.file_read("./cache.dat")) as return_type<|build_from_pages|>[1]
-else
-	T = build_from_pages()
-	local buf = buffer.encode(T)
-	util.file_write("./cache.dat", tostring(buf))
-end
-
-util.file_write("./output.json", json.encode(T))
-
-local function sort(a: ref Table, b: ref Table)
-	return a.key > b.key
-end
-
-local function to_list(map: ref Table)
-	local list = {}
-
-	for k, v in pairs(map) do
-		table.insert(list, {key = k, val = v})
-	end
-
-	table.sort(list, sort)
-	return list
-end
-
-local function spairs(map: ref Table)
-	local list = to_list(map)
-	local i = 0
-	return function()
-		i = i + 1
-
-		if not list[i] then return end
-
-		return list[i].key, list[i].val
-	end
-end
-
-local nlua = {}
-local i = 1
-local write = function(s: string)
-	nlua[i] = s
-	i = i + 1
-end
-write("type Enum = {}\n")
-
-for enum_group_name, enums in spairs(T.enums) do
-	write("type Enum." .. enum_group_name .. " = enum<|{\n")
-
-	for enum_name, enum in ipairs(enums) do
-		enum.name = enum.name:gsub("%.", "_") -- TODO
-		write("\t" .. enum.name .. " = " .. enum.value .. ",\n")
-	end
-
-	write("}|>\n")
-end
-
-for group_name, data in spairs(T.structures) do
-	write("local type " .. group_name .. " = {}\n")
-end
-
-local function translate_type(t: string)
-	if t == "function" then
-		return "Function"
-	elseif t == "table" then
-		return "Table"
-	elseif t == "pixelvis handle t" then
-		return "PixelVisHandle"
-	elseif t == "file_class" then
-		return "File"
-	elseif t == "Boolean" then
-		return "boolean"
-	elseif t == "DListBox" or t == "MatSelect" then
-		return "Panel"
-	end
-
-	return t
-end
-
-local function write_tuple(tup)
-	local s = ""
-
-	for i, data in ipairs(tup) do
-		local t = translate_type(data.type or "any")
-
-		if data.default then t = "nil | " .. t end
-
-		s = s .. t
-
-		if i ~= #tup then s = s .. ", " end
-	end
-
-	return s
-end
-
-for group_name, data in spairs(T.structures) do
-	write("do -- " .. group_name .. "\n")
-
-	for name, data in spairs(data.members) do
-		if name == "StructureField (Order)" then name = "StructureField" end
-
-		if tonumber(name) then
-			name = "[" .. name .. "]"
-		else
-			name = "." .. name
-		end
-
-		write("\ttype " .. group_name .. name .. " = " .. translate_type(data.type) .. "\n")
-	end
-
-	for name, data in spairs(data.functions) do
-		local input = data.input
-		table.insert(input, 1, {type = group_name})
-
-		if name == "SetKeyboardInputEnabled(lowercase)" then
-			name = "SetKeyboardInputEnabled"
-		end
-
-		write(
-			"\ttype " .. group_name .. "." .. name .. " = function=(" .. write_tuple(input) .. ")>(" .. write_tuple(data.output) .. ")\n"
-		)
-	end
-
-	write("end\n")
-end
-
-for group_name, data in spairs(T.libraries) do
-	write("type " .. group_name .. " = {\n")
-
-	for name, data in spairs(data.functions) do
-		name = name:gsub("%.", "_") -- TODO
-		write(
-			"\t" .. name .. " = function=(" .. write_tuple(data.input) .. ")>(" .. write_tuple(data.output) .. "),\n"
-		)
-	end
-
-	write("}\n")
-end
-
-util.file_write("./output.nlua", table.concat(nlua))

@@ -1,0 +1,53 @@
+local json = import("./util/json.nlua")
+local util = import("./util/util.nlua")
+local type PageIndex = {[number] = {address = string}}
+local type Page = {
+	title = string,
+	wikiName = string,
+	wikiIcon = string,
+	wikiUrl = string,
+	address = string,
+	createdTime = string,
+	updateCount = number,
+	markup = string,
+	html = string,
+	footer = string,
+	revisionId = number,
+	pageLinks = List<|
+		{
+			url = string,
+			label = string,
+			icon = string,
+			description = string,
+		}
+	|>,
+}
+return function()
+	if not util.file_exists("./cache/pages_index.json") then
+		util.download(
+			"https://wiki.facepunch.com/gmod/~pagelist?format=json",
+			"./cache/pages_index.json"
+		)
+	end
+
+	local pages = json.decode(util.file_read("./pages/index.json")) as PageIndex
+
+	do
+		assert(pages[1].address == "")
+		table.remove(pages, 1) -- remove the first page which is just the homepage
+	end
+
+	local out = {}
+
+	for i, page in ipairs(pages) do
+		local path = "./cache/pages/" .. page.address .. ".json"
+
+		if not util.file_exists(path) then
+			util.download("https://wiki.facepunch.com/gmod/" .. page.address .. "?format=json", path)
+		end
+
+		out[i] = json.decode(util.file_read(path)) as Page
+	end
+
+	return out
+end

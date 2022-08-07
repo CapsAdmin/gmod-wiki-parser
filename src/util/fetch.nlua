@@ -118,6 +118,7 @@ local function fetch(url: string, output_path: string)
 
 	script = script:gsub("%{URL%}", url)
 	script = script:gsub("%{OUTPUT_PATH%}", output_path)
+	print("downloading ", url, " to ", output_path)
 	os.execute(script)
 end
 

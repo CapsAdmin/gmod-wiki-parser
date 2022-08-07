@@ -1,0 +1,135 @@
+local type parse_wiki = import("./parse_wiki.nlua")
+local util = import("./util/util.nlua")
+
+local function sort(a: ref Table, b: ref Table)
+	return a.key > b.key
+end
+
+local function to_list(map: ref Table)
+	local list = {}
+
+	for k, v in pairs(map) do
+		table.insert(list, {key = k, val = v})
+	end
+
+	table.sort(list, sort)
+	return list
+end
+
+local function spairs(map: ref Table)
+	local list = to_list(map)
+	local i = 0
+	return function()
+		i = i + 1
+
+		if not list[i] then return end
+
+		return list[i].key, list[i].val
+	end
+end
+
+return function(T: return_type<|parse_wiki|>[1])
+	local nlua = {}
+	local i = 1
+	local write = function(s: string)
+		nlua[i] = s
+		i = i + 1
+	end
+	write("type Enum = {}\n")
+
+	for enum_group_name, enums in spairs(T.enums) do
+		write("type Enum." .. enum_group_name .. " = enum<|{\n")
+
+		for enum_name, enum in ipairs(enums) do
+			enum.name = enum.name:gsub("%.", "_") -- TODO
+			write("\t" .. enum.name .. " = " .. enum.value .. ",\n")
+		end
+
+		write("}|>\n")
+	end
+
+	for group_name, data in spairs(T.structures) do
+		write("local type " .. group_name .. " = {}\n")
+	end
+
+	local function translate_type(t: string)
+		if t == "function" then
+			return "Function"
+		elseif t == "table" then
+			return "Table"
+		elseif t == "pixelvis handle t" then
+			return "PixelVisHandle"
+		elseif t == "file_class" then
+			return "File"
+		elseif t == "Boolean" then
+			return "boolean"
+		elseif t == "DListBox" or t == "MatSelect" then
+			return "Panel"
+		end
+
+		return t
+	end
+
+	local function write_tuple(tup)
+		local s = ""
+
+		for i, data in ipairs(tup) do
+			local t = translate_type(data.type or "any")
+
+			if data.default then t = "nil | " .. t end
+
+			s = s .. t
+
+			if i ~= #tup then s = s .. ", " end
+		end
+
+		return s
+	end
+
+	for group_name, data in spairs(T.structures) do
+		write("do -- " .. group_name .. "\n")
+
+		for name, data in spairs(data.members) do
+			if name == "StructureField (Order)" then name = "StructureField" end
+
+			if tonumber(name) then
+				name = "[" .. name .. "]"
+			else
+				name = "." .. name
+			end
+
+			write("\ttype " .. group_name .. name .. " = " .. translate_type(data.type) .. "\n")
+		end
+
+		for name, data in spairs(data.functions) do
+			local input = data.input
+			table.insert(input, 1, {type = group_name})
+
+			if name == "SetKeyboardInputEnabled(lowercase)" then
+				name = "SetKeyboardInputEnabled"
+			end
+
+			write(
+				"\ttype " .. group_name .. "." .. name .. " = function=(" .. write_tuple(input) .. ")>(" .. write_tuple(data.output) .. ")\n"
+			)
+		end
+
+		write("end\n")
+	end
+
+	for group_name, data in spairs(T.libraries) do
+		write("type " .. group_name .. " = {\n")
+
+		for name, data in spairs(data.functions) do
+			name = name:gsub("%.", "_") -- TODO
+			write(
+				"\t" .. name .. " = function=(" .. write_tuple(data.input) .. ")>(" .. write_tuple(data.output) .. "),\n"
+			)
+		end
+
+		write("}\n")
+	end
+
+	util.file_write("./output/glua.nlua", table.concat(nlua))
+	os.execute("/home/caps/.local/bin/nattlua check ./output/glua.nlua")
+end

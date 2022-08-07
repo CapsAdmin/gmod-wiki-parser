@@ -1,0 +1,25 @@
+local buffer = require("string.buffer" as string) as {
+	encode = function=(data: any)>(string),
+	decode = function=(data: string)>(any),
+}
+local json = import("./util/json.nlua")
+local html = import("./util/parse_html.nlua")
+local util = import("./util/util.nlua")
+local download_wiki_pages = import("./download_wiki_pages.nlua")
+local parse_wiki = import("./parse_wiki.nlua")
+local write_nattlua = import("./write_nattlua.nlua")
+
+do
+	local types: return_type<|parse_wiki|>[1]
+
+	if util.file_exists("./cache/parsed_pages.bin") then
+		types = buffer.decode(util.file_read("./cache/parsed_pages.bin")) as return_type<|parse_wiki|>[1]
+	else
+		local pages = download_wiki_pages()
+		types = parse_wiki(pages)
+		util.file_write("./cache/parsed_pages.bin", tostring(buffer.encode(types)))
+	end
+
+	util.file_write("./output/wiki.json", json.encode(types))
+	write_nattlua(types)
+end

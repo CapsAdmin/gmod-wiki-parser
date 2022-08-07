@@ -1,5 +1,2 @@
-pages
-output.json
-output.nlua
-cache.dat
-gmod_wiki.json
+cache
+output
