@@ -1,0 +1,4 @@
+import("./../output/glua.nlua")
+local ply = Player(1)
+-- inherit to IEntity
+attest.equal(ply:GetPos(), _  as IVector)

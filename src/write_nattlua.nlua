@@ -28,6 +28,97 @@ local function spairs(map: ref Table)
 	end
 end
 
+local BaseTables = {
+	IPlayer = "IEntity",
+}
+local TypeMap = {}
+TypeMap["Color"] = "IColor"
+TypeMap["VMatrix"] = "IMatrix"
+TypeMap["Vector"] = "IVector"
+TypeMap["Angle"] = "IAngle"
+-- aren't these two the same from lua's point of view?
+TypeMap["Entity"] = "IEntity"
+TypeMap["CSEnt"] = "IEntity"
+TypeMap["Player"] = "IPlayer"
+TypeMap["Vehicle"] = "IVehicle"
+TypeMap["NPC"] = "INPC"
+TypeMap["Weapon"] = "IWeapon"
+TypeMap["Panel"] = "IPanel"
+-- unconventional
+TypeMap["bf_read"] = "IBfRead"
+TypeMap["pixelvis handle t"] = "IPixVis"
+TypeMap["sensor"] = "ISensor"
+-- what's the difference?
+TypeMap["File"] = "IFile"
+TypeMap["file_class"] = "IFile"
+TypeMap["IVideoWriter"] = "IVideoWriter"
+TypeMap["IMaterial"] = "IMaterial"
+TypeMap["CMoveData"] = "IMoveData"
+TypeMap["PhysObj"] = "IPhysObj"
+TypeMap["MarkupObject"] = "IMarkupObject"
+TypeMap["ITexture"] = "ITexture"
+TypeMap["IMesh"] = "IMesh"
+TypeMap["CEffectData"] = "IEffectData"
+TypeMap["CUserCmd"] = "IUserCmd"
+TypeMap["IRestore"] = "IRestore"
+TypeMap["CNavArea"] = "INavArea"
+TypeMap["Stack"] = "IStack"
+TypeMap["CNavLadder"] = "INavLadder"
+TypeMap["Task"] = "ITask"
+TypeMap["CTakeDamageInfo"] = "ITakeDamageInfo"
+TypeMap["ISave"] = "ISave"
+TypeMap["Tool"] = "ITool"
+TypeMap["SurfaceInfo"] = "ISurfaceInfo"
+TypeMap["Schedule"] = "ISchedule"
+TypeMap["ProjectedTexture"] = "IProjectedTexture"
+TypeMap["PhysCollide"] = "IPhysCollide"
+TypeMap["PathFollower"] = "IPathFollower"
+TypeMap["NextBot"] = "INextBot"
+TypeMap["IGModAudioChannel"] = "IGModAudioChannel"
+TypeMap["CNewParticleEffect"] = "INewParticleEffect"
+TypeMap["ConVar"] = "IConVar"
+TypeMap["CSoundPatch"] = "ISoundPatch"
+TypeMap["CRecipientFilter"] = "IRecipientFilter"
+TypeMap["CLuaParticle"] = "ILuaParticle"
+TypeMap["CLuaLocomotion"] = "ILuaLocomotion"
+TypeMap["CLuaEmitter"] = "ILuaEmitter"
+
+local function translate_type(t: string)
+	if t == "function" then
+		return "Function"
+	elseif t == "table" then
+		return "Table"
+	elseif t == "pixelvis handle t" or t == "PixelVisHandle" then
+		return "IPixVis"
+	elseif t == "file_class" then
+		return "File"
+	elseif t == "Boolean" then
+		return "boolean"
+	elseif t == "DListBox" or t == "MatSelect" then
+		return "IPanel"
+	end
+
+	if TypeMap[t] then return TypeMap[t] end
+
+	return t
+end
+
+local function write_tuple(tup)
+	local s = ""
+
+	for i, data in ipairs(tup) do
+		local t = translate_type(data.type or "any")
+
+		if data.default then t = "nil | " .. t end
+
+		s = s .. t
+
+		if i ~= #tup then s = s .. ", " end
+	end
+
+	return s
+end
+
 return function(T: return_type<|parse_wiki|>[1])
 	local nlua = {}
 	local i = 1
@@ -49,45 +140,23 @@ return function(T: return_type<|parse_wiki|>[1])
 	end
 
 	for group_name, data in spairs(T.structures) do
-		write("local type " .. group_name .. " = {}\n")
-	end
-
-	local function translate_type(t: string)
-		if t == "function" then
-			return "Function"
-		elseif t == "table" then
-			return "Table"
-		elseif t == "pixelvis handle t" then
-			return "PixelVisHandle"
-		elseif t == "file_class" then
-			return "File"
-		elseif t == "Boolean" then
-			return "boolean"
-		elseif t == "DListBox" or t == "MatSelect" then
-			return "Panel"
-		end
-
-		return t
-	end
-
-	local function write_tuple(tup)
-		local s = ""
-
-		for i, data in ipairs(tup) do
-			local t = translate_type(data.type or "any")
-
-			if data.default then t = "nil | " .. t end
-
-			s = s .. t
-
-			if i ~= #tup then s = s .. ", " end
-		end
-
-		return s
+		group_name = translate_type(group_name)
+		write("type " .. group_name .. " = {}\n")
 	end
 
 	for group_name, data in spairs(T.structures) do
+		group_name = translate_type(group_name)
 		write("do -- " .. group_name .. "\n")
+
+		if next(data.functions) then
+			write("\ttype " .. group_name .. ".@MetaTable = " .. group_name .. "\n")
+			write("\ttype " .. group_name .. ".@Name = \"" .. group_name .. "\"\n")
+			write("\ttype " .. group_name .. ".__index = " .. group_name .. "\n")
+
+			if BaseTables[group_name] then
+				write("\ttype " .. group_name .. ".@BaseTable = " .. BaseTables[group_name] .. "\n")
+			end
+		end
 
 		for name, data in spairs(data.members) do
 			if name == "StructureField (Order)" then name = "StructureField" end
@@ -102,32 +171,52 @@ return function(T: return_type<|parse_wiki|>[1])
 		end
 
 		for name, data in spairs(data.functions) do
-			local input = data.input
-			table.insert(input, 1, {type = group_name})
+			if name ~= "__index" and name ~= "__newindex" then
+				local input = data.input
+				table.insert(input, 1, {type = group_name})
 
-			if name == "SetKeyboardInputEnabled(lowercase)" then
-				name = "SetKeyboardInputEnabled"
+				if name == "SetKeyboardInputEnabled(lowercase)" then
+					name = "SetKeyboardInputEnabled"
+				end
+
+				write(
+					"\ttype " .. group_name .. "." .. name .. " = function=(" .. write_tuple(input) .. ")>(" .. write_tuple(data.output) .. ")\n"
+				)
 			end
-
-			write(
-				"\ttype " .. group_name .. "." .. name .. " = function=(" .. write_tuple(input) .. ")>(" .. write_tuple(data.output) .. ")\n"
-			)
 		end
 
 		write("end\n")
 	end
 
 	for group_name, data in spairs(T.libraries) do
-		write("type " .. group_name .. " = {\n")
+		if group_name ~= "Global" then
+			if not _G[group_name] then write("type " .. group_name .. " = {}\n") end
 
-		for name, data in spairs(data.functions) do
-			name = name:gsub("%.", "_") -- TODO
-			write(
-				"\t" .. name .. " = function=(" .. write_tuple(data.input) .. ")>(" .. write_tuple(data.output) .. "),\n"
-			)
+			for name, data in spairs(data.functions) do
+				if not _G[group_name] or not _G[group_name][name] then
+					local group_name = group_name
+
+					if group_name == "string" then group_name = "^string" end
+
+					name = name:gsub("%.", "_") -- TODO
+					write(
+						"type " .. group_name .. "." .. name .. " = function=(" .. write_tuple(data.input) .. ")>(" .. write_tuple(data.output) .. ")\n"
+					)
+				end
+			end
 		end
+	end
 
-		write("}\n")
+	for group_name, data in spairs(T.libraries) do
+		if group_name == "Global" then
+			for name, data in spairs(data.functions) do
+				if not _G[name] then
+					write(
+						"type " .. name .. " = function=(" .. write_tuple(data.input) .. ")>(" .. write_tuple(data.output) .. ")\n"
+					)
+				end
+			end
+		end
 	end
 
 	util.file_write("./output/glua.nlua", table.concat(nlua))

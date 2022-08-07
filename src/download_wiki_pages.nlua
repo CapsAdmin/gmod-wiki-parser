@@ -30,7 +30,7 @@ return function()
 		)
 	end
 
-	local pages = json.decode(util.file_read("./pages/index.json")) as PageIndex
+	local pages = json.decode(util.file_read("./cache/pages_index.json")) as PageIndex
 
 	do
 		assert(pages[1].address == "")

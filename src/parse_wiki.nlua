@@ -82,8 +82,8 @@ return function(pages: return_type<|download_wilki_pages|>[1])
 
 						for _, child in ipairs(members.children) do
 							local children = assert(child.children)
-							local type = html.to_string(assert(children[1]))
-							local name = html.to_string(assert(children[2]))
+							local type = util.string_trim(html.to_string(assert(children[1])))
+							local name = util.string_trim(html.to_string(assert(children[2])))
 							local description = assert(children[3])
 							type = find_type_from_description(type, description, page.address)
 
@@ -110,7 +110,7 @@ return function(pages: return_type<|download_wilki_pages|>[1])
 						T.structures[page.address] = T.structures[page.address] or {members = {}, functions = {}}
 
 						for _, child in ipairs(functions.children) do
-							local name = html.to_string(child.children[1])
+							local name = util.string_trim(html.to_string(child.children[1]))
 							local type = util.string_trim(html.to_string(child.children[2]))
 							local description = child.children[3]
 							local ret_type = find_type_from_description(nil, description, page.address)

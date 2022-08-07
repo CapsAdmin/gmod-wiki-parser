@@ -41,6 +41,8 @@ elseif cmd == "run" then
 
 	if func then
 		print(compiler:Analyze())
-		func()
+		print(path)
+
+		if not path:find("test/") then func() end
 	end
 end
